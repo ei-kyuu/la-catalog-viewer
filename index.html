@@ -1118,33 +1118,37 @@
   body.no-design .panel .coord{ color:var(--ink); background:rgba(255,255,255,0.7); }
 
   /* fold lines: panels always sit edge to edge (zero gap); this draws a 1px
-     50% black stroke at internal fold seams only, not the outer perimeter. */
-  body.fold-lines .face-outside .b1,
-  body.fold-lines .flap-a1 .panel,
-  body.fold-lines .flap-row2 .panel:nth-child(1),
-  body.fold-lines .flap-row2 .panel:nth-child(2){
+     50% black stroke at internal fold seams only, not the outer perimeter.
+     Applied via ::after rather than box-shadow directly on .panel, since
+     each panel's own <img> is opaque and fills 100% of the box - painted
+     after the panel's background/box-shadow, it would otherwise hide it. */
+  .panel::after{ content:''; position:absolute; inset:0; pointer-events:none; }
+  body.fold-lines .face-outside .b1::after,
+  body.fold-lines .flap-a1 .panel::after,
+  body.fold-lines .flap-row2 .panel:nth-child(1)::after,
+  body.fold-lines .flap-row2 .panel:nth-child(2)::after{
     box-shadow: inset -1px 0 0 rgba(0,0,0,0.5), inset 0 -1px 0 rgba(0,0,0,0.5);
   }
-  body.fold-lines .flap-c1 .panel,
-  body.fold-lines .flap-row2 .panel:nth-child(3){
+  body.fold-lines .flap-c1 .panel::after,
+  body.fold-lines .flap-row2 .panel:nth-child(3)::after{
     box-shadow: inset 0 -1px 0 rgba(0,0,0,0.5);
   }
-  body.fold-lines .flap-row3 .panel:nth-child(1),
-  body.fold-lines .flap-row3 .panel:nth-child(2){
+  body.fold-lines .flap-row3 .panel:nth-child(1)::after,
+  body.fold-lines .flap-row3 .panel:nth-child(2)::after{
     box-shadow: inset -1px 0 0 rgba(0,0,0,0.5);
   }
-  body.fold-lines .inside-grid .pos-A1,
-  body.fold-lines .inside-grid .pos-B1,
-  body.fold-lines .inside-grid .pos-A2,
-  body.fold-lines .inside-grid .pos-B2{
+  body.fold-lines .inside-grid .pos-A1::after,
+  body.fold-lines .inside-grid .pos-B1::after,
+  body.fold-lines .inside-grid .pos-A2::after,
+  body.fold-lines .inside-grid .pos-B2::after{
     box-shadow: inset -1px 0 0 rgba(0,0,0,0.5), inset 0 -1px 0 rgba(0,0,0,0.5);
   }
-  body.fold-lines .inside-grid .pos-C1,
-  body.fold-lines .inside-grid .pos-C2{
+  body.fold-lines .inside-grid .pos-C1::after,
+  body.fold-lines .inside-grid .pos-C2::after{
     box-shadow: inset 0 -1px 0 rgba(0,0,0,0.5);
   }
-  body.fold-lines .inside-grid .pos-A3,
-  body.fold-lines .inside-grid .pos-B3{
+  body.fold-lines .inside-grid .pos-A3::after,
+  body.fold-lines .inside-grid .pos-B3::after{
     box-shadow: inset -1px 0 0 rgba(0,0,0,0.5);
   }
 
@@ -1515,8 +1519,13 @@
 
     function texFromImg(imgEl){
       const t = new THREE.Texture(imgEl);
-      t.needsUpdate = true;
       t.anisotropy = 4;
+      // Front/back <img> src is swapped to the default art version at page
+      // load, just before this runs on first 3D init - if that image hasn't
+      // finished decoding yet, needsUpdate=true here uploads a blank frame
+      // and (since nothing else sets it again) never gets refreshed.
+      if (imgEl.complete) t.needsUpdate = true;
+      else imgEl.addEventListener('load', () => { t.needsUpdate = true; }, { once: true });
       return t;
     }
 
@@ -1554,7 +1563,7 @@
     }
 
     function makeSheet(coord){
-      const geo = new THREE.PlaneGeometry(0.98, 0.98);
+      const geo = new THREE.PlaneGeometry(1, 1);
       const frontTex = texFromImg(frontImgEls[coord]);
       const backTex = texFromImg(backImgEls[mirroredCoord(coord)]);
       const placeholderTex = new THREE.CanvasTexture(placeholders[coord]);
