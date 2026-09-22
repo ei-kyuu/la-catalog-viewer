@@ -1684,15 +1684,20 @@
       pivotRow3.rotation.x += (targets.row3 - pivotRow3.rotation.x) * 0.12;
       foldRoot.rotation.y += (targets.flip - foldRoot.rotation.y) * 0.08;
 
-      // only hide a flap once it has actually finished folding shut, so
-      // reversing a step visibly folds it closed instead of popping away
+      // only hide a flap's panels once it has actually finished folding
+      // shut, so reversing a step visibly folds it closed instead of
+      // popping away. Seams are simpler but stricter: they're offset from
+      // their pivot's rotation axis, so at any angle other than fully open
+      // they'd be arcing through empty space with no panel edge to anchor
+      // them to - so a seam is only ever visible while its flap is at rest,
+      // open, full stop, independent of which direction it's mid-swing
+      // toward. Re-derived from the live angle every frame (not cached off
+      // f.open) so this self-corrects even if the user reverses mid-swing.
       flapDefs.forEach(f => {
-        if (!f.open) {
-          const angle = f.pivot.rotation[f.axis];
-          if (Math.abs(angle - f.closedAngle) < 0.04) {
-            f.sheets.forEach(s => s.visible = false);
-            f.seams.forEach(s => s.visible = false);
-          }
+        const angle = f.pivot.rotation[f.axis];
+        f.seams.forEach(s => { s.visible = foldLinesEnabled && Math.abs(angle) < 0.04; });
+        if (!f.open && Math.abs(angle - f.closedAngle) < 0.04) {
+          f.sheets.forEach(s => s.visible = false);
         }
       });
 
@@ -1717,19 +1722,18 @@
         flapDefs.forEach((f, i) => {
           const shouldOpen = wants[i];
           if (shouldOpen && !f.open) {
-            // newly opening: show immediately so it can swing into view
+            // newly opening: show the panel immediately so it can swing into
+            // view; its seam stays hidden until animate() sees it settle open
             f.sheets.forEach(s => s.visible = true);
-            f.seams.forEach(s => s.visible = foldLinesEnabled);
           }
           f.open = shouldOpen;
           // closing case is handled per-frame in animate(), once the fold
           // has actually finished swinging shut
         });
       },
-      applyFoldLines: (show) => {
-        foldLinesEnabled = show;
-        flapDefs.forEach(f => { if (f.open) f.seams.forEach(s => s.visible = show); });
-      },
+      // animate()'s per-frame check re-applies this against the live angle,
+      // so just flipping the flag is enough either direction.
+      applyFoldLines: (show) => { foldLinesEnabled = show; },
       markFrontDirty: () => {
         allSheets.forEach(g => markTexWhenReady(g.userData.frontTex.image, g.userData.frontTex));
       },
