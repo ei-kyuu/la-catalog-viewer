@@ -1451,6 +1451,7 @@
   });
   foldLinesToggle.addEventListener('change', () => {
     document.body.classList.toggle('fold-lines', foldLinesToggle.checked);
+    if (three) three.applyFoldLines(foldLinesToggle.checked);
   });
   const view3dToggle = document.getElementById('view3dToggle');
   const viewNudge = document.getElementById('viewNudge');
@@ -1517,15 +1518,24 @@
     fill.position.set(-3, -2, -2);
     scene.add(fill);
 
+    // Front/back <img> src is swapped to the default art version at page
+    // load, and can be swapped again later by the version pickers - if that
+    // image hasn't finished decoding by the time a texture reads it,
+    // needsUpdate=true uploads a blank frame that nothing then refreshes.
+    // decode() resolves once the image is actually paintable, which is a
+    // stronger guarantee than the `complete`/`load` pair (true in more
+    // browsers, closer to the actual GPU-upload-safe moment).
+    function markTexWhenReady(imgEl, tex){
+      const mark = () => { tex.needsUpdate = true; };
+      if (imgEl.decode) imgEl.decode().then(mark).catch(mark);
+      else if (imgEl.complete) mark();
+      else imgEl.addEventListener('load', mark, { once: true });
+    }
+
     function texFromImg(imgEl){
       const t = new THREE.Texture(imgEl);
       t.anisotropy = 4;
-      // Front/back <img> src is swapped to the default art version at page
-      // load, just before this runs on first 3D init - if that image hasn't
-      // finished decoding yet, needsUpdate=true here uploads a blank frame
-      // and (since nothing else sets it again) never gets refreshed.
-      if (imgEl.complete) t.needsUpdate = true;
-      else imgEl.addEventListener('load', () => { t.needsUpdate = true; }, { once: true });
+      markTexWhenReady(imgEl, t);
       return t;
     }
 
@@ -1616,16 +1626,45 @@
 
     const allSheets = [sheetB1, sheetC1, sheetA1, sheetA2, sheetB2, sheetC2, sheetA3, sheetB3, sheetC3];
 
+    // fold-line seam indicators (3D equivalent of the 2D ::after treatment):
+    // thin planes at internal seams only, parented to the pivot that swings
+    // them into place so they only appear once that fold is open. Rendered
+    // with depthTest off so the flip (which inverts which local Z faces the
+    // camera) can't bury them behind the now-front-facing back texture.
+    const seamMat = new THREE.MeshBasicMaterial({
+      color: 0x000000, transparent: true, opacity: 0.5,
+      depthTest: false, depthWrite: false, side: THREE.DoubleSide
+    });
+    function makeSeam(length, vertical){
+      const geo = vertical ? new THREE.PlaneGeometry(0.015, length) : new THREE.PlaneGeometry(length, 0.015);
+      const m = new THREE.Mesh(geo, seamMat);
+      m.renderOrder = 1;
+      return m;
+    }
+    const seamA1B1 = makeSeam(1, true); seamA1B1.position.set(0.5, 0, 0.025); pivotA1.add(seamA1B1);
+    const seamB1C1 = makeSeam(1, true); seamB1C1.position.set(-0.5, 0, 0.025); pivotC1.add(seamB1C1);
+    const seamA2B2 = makeSeam(1, true); seamA2B2.position.set(-0.5, -0.5, 0.025); pivotRow2.add(seamA2B2);
+    const seamB2C2 = makeSeam(1, true); seamB2C2.position.set(0.5, -0.5, 0.025); pivotRow2.add(seamB2C2);
+    const seamRow1Row2 = makeSeam(3, false); seamRow1Row2.position.set(0, 0, 0.025); pivotRow2.add(seamRow1Row2);
+    const seamA3B3 = makeSeam(1, true); seamA3B3.position.set(-0.5, -0.5, 0.025); pivotRow3.add(seamA3B3);
+    const seamB3C3 = makeSeam(1, true); seamB3C3.position.set(0.5, -0.5, 0.025); pivotRow3.add(seamB3C3);
+    const seamRow2Row3 = makeSeam(3, false); seamRow2Row3.position.set(0, 0, 0.025); pivotRow3.add(seamRow2Row3);
+    let foldLinesEnabled = foldLinesToggle.checked;
+
     // flap descriptors: which pivot/axis controls each group, its closed angle,
-    // and which sheets ride along with it. Used to fold shut (not just vanish)
-    // when a stage is reversed.
+    // and which sheets (and seam lines) ride along with it. Used to fold shut
+    // (not just vanish) when a stage is reversed.
     const flapDefs = [
-      { pivot: pivotC1, axis: 'y', closedAngle: Math.PI, sheets: [sheetC1] },
-      { pivot: pivotA1, axis: 'y', closedAngle: -Math.PI, sheets: [sheetA1] },
-      { pivot: pivotRow2, axis: 'x', closedAngle: Math.PI, sheets: [sheetA2, sheetB2, sheetC2] },
-      { pivot: pivotRow3, axis: 'x', closedAngle: Math.PI, sheets: [sheetA3, sheetB3, sheetC3] },
+      { pivot: pivotC1, axis: 'y', closedAngle: Math.PI, sheets: [sheetC1], seams: [seamB1C1] },
+      { pivot: pivotA1, axis: 'y', closedAngle: -Math.PI, sheets: [sheetA1], seams: [seamA1B1] },
+      { pivot: pivotRow2, axis: 'x', closedAngle: Math.PI, sheets: [sheetA2, sheetB2, sheetC2], seams: [seamA2B2, seamB2C2, seamRow1Row2] },
+      { pivot: pivotRow3, axis: 'x', closedAngle: Math.PI, sheets: [sheetA3, sheetB3, sheetC3], seams: [seamA3B3, seamB3C3, seamRow2Row3] },
     ];
-    flapDefs.forEach(f => { f.open = false; f.sheets.forEach(s => s.visible = false); });
+    flapDefs.forEach(f => {
+      f.open = false;
+      f.sheets.forEach(s => s.visible = false);
+      f.seams.forEach(s => s.visible = false);
+    });
 
     function onResize(){
       const w2 = wrap.clientWidth, h2 = wrap.clientHeight;
@@ -1652,6 +1691,7 @@
           const angle = f.pivot.rotation[f.axis];
           if (Math.abs(angle - f.closedAngle) < 0.04) {
             f.sheets.forEach(s => s.visible = false);
+            f.seams.forEach(s => s.visible = false);
           }
         }
       });
@@ -1679,27 +1719,22 @@
           if (shouldOpen && !f.open) {
             // newly opening: show immediately so it can swing into view
             f.sheets.forEach(s => s.visible = true);
+            f.seams.forEach(s => s.visible = foldLinesEnabled);
           }
           f.open = shouldOpen;
           // closing case is handled per-frame in animate(), once the fold
           // has actually finished swinging shut
         });
       },
+      applyFoldLines: (show) => {
+        foldLinesEnabled = show;
+        flapDefs.forEach(f => { if (f.open) f.seams.forEach(s => s.visible = show); });
+      },
       markFrontDirty: () => {
-        allSheets.forEach(g => {
-          const tex = g.userData.frontTex;
-          const img = tex.image;
-          if (img.complete) tex.needsUpdate = true;
-          else img.onload = () => { tex.needsUpdate = true; };
-        });
+        allSheets.forEach(g => markTexWhenReady(g.userData.frontTex.image, g.userData.frontTex));
       },
       markBackDirty: () => {
-        allSheets.forEach(g => {
-          const tex = g.userData.backTex;
-          const img = tex.image;
-          if (img.complete) tex.needsUpdate = true;
-          else img.onload = () => { tex.needsUpdate = true; };
-        });
+        allSheets.forEach(g => markTexWhenReady(g.userData.backTex.image, g.userData.backTex));
       },
       nudge: (dy) => {
         camera.position.y += dy;
