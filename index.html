@@ -1641,8 +1641,13 @@
       m.renderOrder = 1;
       return m;
     }
-    const seamA1B1 = makeSeam(1, true); seamA1B1.position.set(0.5, 0, 0.025); pivotA1.add(seamA1B1);
-    const seamB1C1 = makeSeam(1, true); seamB1C1.position.set(-0.5, 0, 0.025); pivotC1.add(seamB1C1);
+    // pivotA1/pivotC1 are themselves positioned at the A1|B1 and B1|C1 hinge
+    // lines (row 2/3's seams below are children of pivotRow2/3, which is why
+    // they use a +-0.5 local offset matching their sibling sheets - but
+    // pivotA1/pivotC1's own position IS that offset, so these seams sit at
+    // local x=0, not +-0.5 again on top of it.
+    const seamA1B1 = makeSeam(1, true); seamA1B1.position.set(0, 0, 0.025); pivotA1.add(seamA1B1);
+    const seamB1C1 = makeSeam(1, true); seamB1C1.position.set(0, 0, 0.025); pivotC1.add(seamB1C1);
     const seamA2B2 = makeSeam(1, true); seamA2B2.position.set(-0.5, -0.5, 0.025); pivotRow2.add(seamA2B2);
     const seamB2C2 = makeSeam(1, true); seamB2C2.position.set(0.5, -0.5, 0.025); pivotRow2.add(seamB2C2);
     const seamRow1Row2 = makeSeam(3, false); seamRow1Row2.position.set(0, 0, 0.025); pivotRow2.add(seamRow1Row2);
