@@ -1065,6 +1065,7 @@
   @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap');
   :root{
     --ink:#1c1b19; --paper:#e2e0da; --line:#c9c6bd; --line-strong:#a9a59a; --brand:#e11e26;
+    --fold-dark:rgba(0,0,0,0.22); --fold-light:rgba(255,255,255,0.2);
     --mono:'Space Mono','SFMono-Regular',Consolas,monospace;
     --sans:'Helvetica Neue',Arial,sans-serif;
   }
@@ -1127,29 +1128,33 @@
   body.fold-lines .flap-a1 .panel::after,
   body.fold-lines .flap-row2 .panel:nth-child(1)::after,
   body.fold-lines .flap-row2 .panel:nth-child(2)::after{
-    box-shadow: inset -1px 0 0 rgba(0,0,0,0.5), inset 0 -1px 0 rgba(0,0,0,0.5);
+    box-shadow:
+      inset -1px 0 0 var(--fold-dark), inset -2px 0 0 var(--fold-light),
+      inset 0 -1px 0 var(--fold-dark), inset 0 -2px 0 var(--fold-light);
   }
   body.fold-lines .flap-c1 .panel::after,
   body.fold-lines .flap-row2 .panel:nth-child(3)::after{
-    box-shadow: inset 0 -1px 0 rgba(0,0,0,0.5);
+    box-shadow: inset 0 -1px 0 var(--fold-dark), inset 0 -2px 0 var(--fold-light);
   }
   body.fold-lines .flap-row3 .panel:nth-child(1)::after,
   body.fold-lines .flap-row3 .panel:nth-child(2)::after{
-    box-shadow: inset -1px 0 0 rgba(0,0,0,0.5);
+    box-shadow: inset -1px 0 0 var(--fold-dark), inset -2px 0 0 var(--fold-light);
   }
   body.fold-lines .inside-grid .pos-A1::after,
   body.fold-lines .inside-grid .pos-B1::after,
   body.fold-lines .inside-grid .pos-A2::after,
   body.fold-lines .inside-grid .pos-B2::after{
-    box-shadow: inset -1px 0 0 rgba(0,0,0,0.5), inset 0 -1px 0 rgba(0,0,0,0.5);
+    box-shadow:
+      inset -1px 0 0 var(--fold-dark), inset -2px 0 0 var(--fold-light),
+      inset 0 -1px 0 var(--fold-dark), inset 0 -2px 0 var(--fold-light);
   }
   body.fold-lines .inside-grid .pos-C1::after,
   body.fold-lines .inside-grid .pos-C2::after{
-    box-shadow: inset 0 -1px 0 rgba(0,0,0,0.5);
+    box-shadow: inset 0 -1px 0 var(--fold-dark), inset 0 -2px 0 var(--fold-light);
   }
   body.fold-lines .inside-grid .pos-A3::after,
   body.fold-lines .inside-grid .pos-B3::after{
-    box-shadow: inset -1px 0 0 rgba(0,0,0,0.5);
+    box-shadow: inset -1px 0 0 var(--fold-dark), inset -2px 0 0 var(--fold-light);
   }
 
   .flap{
@@ -1627,19 +1632,32 @@
     const allSheets = [sheetB1, sheetC1, sheetA1, sheetA2, sheetB2, sheetC2, sheetA3, sheetB3, sheetC3];
 
     // fold-line seam indicators (3D equivalent of the 2D ::after treatment):
-    // thin planes at internal seams only, parented to the pivot that swings
-    // them into place so they only appear once that fold is open. Rendered
-    // with depthTest off so the flip (which inverts which local Z faces the
-    // camera) can't bury them behind the now-front-facing back texture.
-    const seamMat = new THREE.MeshBasicMaterial({
-      color: 0x000000, transparent: true, opacity: 0.5,
+    // a thin dark line paired with an adjacent light one (real creases read
+    // as a highlight+shadow pair, not a flat drawn line), at internal seams
+    // only, parented to the pivot that swings them into place so they only
+    // appear once that fold is open. Rendered with depthTest off so the flip
+    // (which inverts which local Z faces the camera) can't bury them behind
+    // the now-front-facing back texture.
+    const seamThickness = 0.015;
+    const seamMatDark = new THREE.MeshBasicMaterial({
+      color: 0x000000, transparent: true, opacity: 0.22,
+      depthTest: false, depthWrite: false, side: THREE.DoubleSide
+    });
+    const seamMatLight = new THREE.MeshBasicMaterial({
+      color: 0xffffff, transparent: true, opacity: 0.2,
       depthTest: false, depthWrite: false, side: THREE.DoubleSide
     });
     function makeSeam(length, vertical){
-      const geo = vertical ? new THREE.PlaneGeometry(0.015, length) : new THREE.PlaneGeometry(length, 0.015);
-      const m = new THREE.Mesh(geo, seamMat);
-      m.renderOrder = 1;
-      return m;
+      const geo = vertical ? new THREE.PlaneGeometry(seamThickness, length) : new THREE.PlaneGeometry(length, seamThickness);
+      const dark = new THREE.Mesh(geo, seamMatDark);
+      const light = new THREE.Mesh(geo.clone(), seamMatLight);
+      dark.renderOrder = 1; light.renderOrder = 1;
+      // light sits toward the earlier panel (left column / top row), dark
+      // toward the later one, matching the 2D treatment's direction
+      if (vertical) light.position.x = -seamThickness; else light.position.y = seamThickness;
+      const group = new THREE.Group();
+      group.add(dark, light);
+      return group;
     }
     // pivotA1/pivotC1 are themselves positioned at the A1|B1 and B1|C1 hinge
     // lines (row 2/3's seams below are children of pivotRow2/3, which is why
