@@ -1516,10 +1516,21 @@
       placeholders[c] = cv;
     });
 
+    // The flip (foldRoot.rotation.y) is a single 180deg rotation, which mirrors
+    // each sheet's X position (A-column <-> C-column) as it swings into view -
+    // unlike the 2D CSS flip, whose pre-rotated back face cancels that mirror
+    // out. Compensate by wiring each sheet's back texture from its mirrored
+    // column so the swap lands it back in correct reading position.
+    function mirroredCoord(coord){
+      const col = coord[0], row = coord[1];
+      const mirroredCol = col === 'A' ? 'C' : col === 'C' ? 'A' : 'B';
+      return mirroredCol + row;
+    }
+
     function makeSheet(coord){
       const geo = new THREE.PlaneGeometry(0.98, 0.98);
       const frontTex = texFromImg(frontImgEls[coord]);
-      const backTex = texFromImg(backImgEls[coord]);
+      const backTex = texFromImg(backImgEls[mirroredCoord(coord)]);
       const placeholderTex = new THREE.CanvasTexture(placeholders[coord]);
       const frontMat = new THREE.MeshStandardMaterial({ map: frontTex, roughness: 0.85, metalness: 0 });
       const backMat = new THREE.MeshStandardMaterial({ map: backTex, roughness: 0.85, metalness: 0 });
